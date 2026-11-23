@@ -9,15 +9,21 @@ const { spawn } = require('child_process');
   console.log('Timestamp:', new Date().toISOString());
   console.log('====================================================\n');
 
-  // 1. Recreate session.json if running in GitHub Actions with Secrets
-  if (process.env.NAUKRI_SESSION_JSON) {
-    console.log('Detected NAUKRI_SESSION_JSON environment variable. Writing session.json...');
-    fs.writeFileSync(path.join(__dirname, 'session.json'), process.env.NAUKRI_SESSION_JSON, 'utf8');
+  const sessionPath = path.join(__dirname, 'session.json');
+
+  // 1. If NAUKRI_SESSION_JSON is available from Secret, write it
+  if (process.env.NAUKRI_SESSION_JSON && process.env.NAUKRI_SESSION_JSON.trim()) {
+    console.log('Detected NAUKRI_SESSION_JSON environment secret. Writing session.json...');
+    fs.writeFileSync(sessionPath, process.env.NAUKRI_SESSION_JSON.trim(), 'utf8');
   }
 
-  const sessionPath = path.join(__dirname, 'session.json');
-  if (!fs.existsSync(sessionPath)) {
-    console.error('❌ ERROR: session.json not found! Please run "node save-session.js" first to generate it.');
+  const hasSession = fs.existsSync(sessionPath);
+  const username = process.env.NAUKRI_USERNAME ? process.env.NAUKRI_USERNAME.trim() : '';
+  const password = process.env.NAUKRI_PASSWORD ? process.env.NAUKRI_PASSWORD.trim() : '';
+
+  if (!hasSession && (!username || !password)) {
+    console.error('❌ ERROR: Neither session cookies nor login credentials were provided!');
+    console.error('Please configure NAUKRI_USERNAME & NAUKRI_PASSWORD (or NAUKRI_SESSION_JSON) in GitHub Repository Secrets.');
     process.exit(1);
   }
 
@@ -44,7 +50,7 @@ const { spawn } = require('child_process');
     }
   }
 
-  // 3. Launch browser (Try headed first with Xvfb, fallback to headless if display unavailable)
+  // 3. Launch browser (Stealth mode)
   let browser;
   try {
     console.log('Launching browser in headed display mode...');
@@ -72,13 +78,18 @@ const { spawn } = require('child_process');
     });
   }
 
-  const context = await browser.newContext({
-    storageState: sessionPath,
+  const contextOptions = {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
     viewport: { width: 1280, height: 720 },
     locale: 'en-US'
-  });
+  };
 
+  if (hasSession) {
+    console.log('Using stored session cookies for authentication.');
+    contextOptions.storageState = sessionPath;
+  }
+
+  const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
 
   // Strip navigator.webdriver
@@ -87,6 +98,32 @@ const { spawn } = require('child_process');
   });
 
   try {
+    // If no existing session, log in directly via credentials
+    if (!hasSession && username && password) {
+      console.log(`Performing direct automated login for ${username}...`);
+      await page.goto('https://www.naukri.com/nlogin/login', {
+        waitUntil: 'domcontentloaded',
+        timeout: 45000
+      });
+      await page.waitForTimeout(2000);
+
+      const userSelector = '#usernameField, input[placeholder*="Email"], input[name="email"]';
+      const passSelector = '#passwordField, input[placeholder*="Password"], input[name="password"]';
+
+      await page.waitForSelector(userSelector, { timeout: 15000 });
+      await page.fill(userSelector, username);
+      await page.fill(passSelector, password);
+
+      const loginBtn = page.locator('button.btn-primary[type="submit"], button:has-text("Login")').first();
+      await loginBtn.click();
+      console.log('Credentials submitted. Waiting for dashboard navigation...');
+
+      await page.waitForURL('**/mnjuser/**', { timeout: 30000 }).catch(async () => {
+        await page.waitForTimeout(6000);
+      });
+      console.log('Post-login URL:', page.url());
+    }
+
     console.log('Navigating to Naukri Profile page...');
     const response = await page.goto('https://www.naukri.com/mnjuser/profile', {
       waitUntil: 'domcontentloaded',
@@ -102,7 +139,7 @@ const { spawn } = require('child_process');
     }
 
     if (currentUrl.includes('/login') || currentUrl.includes('/nlogin')) {
-      throw new Error('Session has expired or cookies were rejected. Please run "node save-session.js" locally to refresh session.json.');
+      throw new Error('Login failed or session expired. Please verify NAUKRI_USERNAME & NAUKRI_PASSWORD in GitHub Secrets.');
     }
 
     // Wait for profile content to load

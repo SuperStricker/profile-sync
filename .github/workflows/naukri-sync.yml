@@ -34,6 +34,8 @@ jobs:
       - name: Run Naukri Profile Sync
         env:
           NAUKRI_SESSION_JSON: ${{ secrets.NAUKRI_SESSION_JSON }}
+          NAUKRI_USERNAME: ${{ secrets.NAUKRI_USERNAME }}
+          NAUKRI_PASSWORD: ${{ secrets.NAUKRI_PASSWORD }}
         # xvfb-run runs Chromium in non-headless GUI mode inside a virtual display buffer
         # This bypasses Akamai's headless detection
         run: |
