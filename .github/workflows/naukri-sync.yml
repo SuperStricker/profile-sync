@@ -1,0 +1,40 @@
+name: Naukri Profile Auto-Sync
+
+on:
+  schedule:
+    # Slot 1: 03:15 UTC (08:45 AM IST) -> GitHub queue delay buffer ke saath 09:00 - 09:10 AM IST par execute hoga
+    - cron: '15 3 * * *'
+    # Slot 2: 03:30 UTC (09:00 AM IST) -> 09:15 - 09:25 AM IST ke beech refresh karega taaki 09:30 AM se pehle 100% without fail update ho jaye
+    - cron: '30 3 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+
+jobs:
+  sync-naukri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Node Dependencies
+        run: npm install
+
+      - name: Install Playwright Browsers & Dependencies
+        run: npx playwright install --with-deps chromium
+
+      - name: Install xvfb (Virtual Framebuffer for headed browser emulation)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Run Naukri Profile Sync
+        env:
+          NAUKRI_SESSION_JSON: ${{ secrets.NAUKRI_SESSION_JSON }}
+        # xvfb-run runs Chromium in non-headless GUI mode inside a virtual display buffer
+        # This bypasses Akamai's headless detection
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node update-profile.js

@@ -1,0 +1,13 @@
+{
+  "name": "naukri-profile-sync",
+  "version": "1.0.0",
+  "description": "Automated Naukri Profile Sync - Daily resume re-upload & headline touch",
+  "main": "update-profile.js",
+  "scripts": {
+    "start": "node update-profile.js",
+    "login": "node save-session.js"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

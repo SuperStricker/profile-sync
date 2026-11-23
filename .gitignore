@@ -1,0 +1,5 @@
+node_modules/
+session.json
+.env
+naukri-profile-updated.png
+*.log
