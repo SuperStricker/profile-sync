@@ -1,16 +1,14 @@
 name: Naukri Profile Auto-Sync
 
 on:
-  schedule:
-    # Slot 1: 03:23 UTC (08:53 AM IST) -> Off-peak jittered minute (avoids global :00/:15/:30 queue spikes)
-    - cron: '23 3 * * *'
-    # Slot 2: 03:38 UTC (09:08 AM IST) -> Guaranteed backup slot to ensure candidate is active before 09:30 AM IST
-    - cron: '38 3 * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub Actions UI
+  # Scheduled exact-time triggers are handled by Cloudflare Worker (naukri-cloud-scheduler)
+  # at 08:55 AM & 09:10 AM IST daily (25,40 3 * * * UTC) via workflow_dispatch
+  # to eliminate GitHub Actions cron queue delays.
+  workflow_dispatch: # Triggered by Cloudflare Cron Worker & manual runs
 
 concurrency:
   group: profile-sync
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   sync-naukri:

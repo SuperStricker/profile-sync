@@ -13,8 +13,8 @@ const CRON_TARGETS = {
 };
 
 async function dispatchWorkflow(env, { repo, workflow, ref }) {
-  const token = env?.GITHUB_TOKEN;
-  const owner = env?.GITHUB_OWNER || "SuperStricker";
+  const token = (env?.GITHUB_TOKEN || "").trim();
+  const owner = (env?.GITHUB_OWNER || "SuperStricker").trim();
   if (!token) {
     throw new Error("Missing GITHUB_TOKEN secret in Cloudflare Worker");
   }
@@ -48,8 +48,45 @@ async function dispatchWorkflow(env, { repo, workflow, ref }) {
   throw new Error(`Dispatch failed for ${owner}/${repo}/${workflow}: ${resp?.status} ${errText}`);
 }
 
+async function runCronTargets(env, cron) {
+  const targets = CRON_TARGETS[cron] || [];
+  if (targets.length === 0) {
+    return { dispatched: [], warning: `No targets mapped for cron "${cron}"` };
+  }
+  const results = await Promise.all(targets.map((target) => dispatchWorkflow(env, target)));
+  for (const res of results) {
+    console.log(`Dispatched ${res.repo}/${res.workflow} -> HTTP ${res.status}`);
+  }
+  return { dispatched: results };
+}
+
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/trigger") {
+      const secret = (env?.DISPATCH_SECRET || "").trim();
+      const provided = (request.headers.get("x-trigger-key") || "").trim();
+      if (!secret || provided !== secret) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+      const cron = url.searchParams.get("cron") || "";
+      try {
+        const result = await runCronTargets(env, cron);
+        return new Response(JSON.stringify({ ok: true, cron, ...result }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      } catch (err) {
+        return new Response(JSON.stringify({ ok: false, error: err.message }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+
     return new Response(
       JSON.stringify({
         service: "naukri-cloud-scheduler",
@@ -67,19 +104,7 @@ export default {
   },
 
   async scheduled(controller, env, ctx) {
-    const targets = CRON_TARGETS[controller.cron] || [];
-    if (targets.length === 0) {
-      console.warn(`No targets mapped for cron "${controller.cron}"`);
-      return;
-    }
-
-    const work = Promise.all(
-      targets.map(async (target) => {
-        const res = await dispatchWorkflow(env, target);
-        console.log(`Dispatched ${res.repo}/${res.workflow} -> HTTP ${res.status}`);
-      })
-    );
-
+    const work = runCronTargets(env, controller.cron);
     ctx.waitUntil(work);
     await work;
   }
