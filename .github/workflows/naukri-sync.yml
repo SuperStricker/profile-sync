@@ -44,3 +44,12 @@ jobs:
         # This bypasses Akamai's headless detection
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node update-profile.js
+
+      - name: Upload Verification Screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: naukri-profile-updated
+          path: naukri-profile-updated.png
+          if-no-files-found: ignore
+          retention-days: 7

@@ -3,3 +3,4 @@ session.json
 .env
 naukri-profile-updated.png
 *.log
+.wrangler/

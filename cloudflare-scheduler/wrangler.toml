@@ -1,0 +1,15 @@
+name = "naukri-cloud-scheduler"
+main = "worker.js"
+compatibility_date = "2026-11-24"
+
+[vars]
+GITHUB_OWNER = "SuperStricker"
+
+[triggers]
+# Exact UTC schedules (runs on Cloudflare Edge with zero GitHub queue lag):
+# - "25,40 3 * * *" -> 08:55 AM & 09:10 AM IST daily -> profile-sync
+# - "30 2-15 * * *" -> 08:00 AM to 09:00 PM IST hourly -> naukri-job-alerts
+crons = [
+  "25,40 3 * * *",
+  "30 2-15 * * *"
+]

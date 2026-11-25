@@ -162,11 +162,39 @@ const { spawn } = require('child_process');
       console.log(`Found resume file: "${resumeFile}". Attaching to #attachCV input...`);
       const attachInput = page.locator('#attachCV');
       if (await attachInput.count() > 0) {
+        const uploadRespPromise = page.waitForResponse(
+          (res) => /file|upload|resume|cv/i.test(res.url()) && ['POST', 'PUT'].includes(res.request().method()),
+          { timeout: 15000 }
+        ).catch(() => null);
+
         await attachInput.setInputFiles(resumePath);
         console.log('Resume file submitted. Waiting for upload confirmation...');
-        
-        // Wait a few seconds for Naukri to process the upload
-        await page.waitForTimeout(6000);
+
+        const uploadResp = await uploadRespPromise;
+        if (uploadResp) {
+          console.log(`Upload HTTP response: ${uploadResp.status()} (${uploadResp.url()})`);
+          if (uploadResp.status() >= 400) {
+            throw new Error(`Resume upload HTTP error: ${uploadResp.status()}`);
+          }
+        }
+
+        // Wait for Naukri UI toast or updated date text to settle
+        await page.waitForTimeout(4000);
+        const pageVerify = await page.evaluate(() => {
+          const text = document.body ? document.body.innerText : '';
+          const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+          return {
+            lastUpdated: lines.find(l => /profile last updated/i.test(l)) || '',
+            uploadedOn: lines.find(l => /uploaded on/i.test(l)) || '',
+            hasSuccessText: /successfully uploaded|resume.*updated/i.test(text)
+          };
+        });
+        console.log('Post-upload profile status:', JSON.stringify(pageVerify));
+
+        if (!uploadResp && !pageVerify.hasSuccessText && !/today/i.test(pageVerify.lastUpdated)) {
+          throw new Error('Could not verify Naukri resume upload confirmation on profile page.');
+        }
+
         console.log(`Resume "${resumeFile}" uploaded successfully!`);
         updated = true;
       } else {
